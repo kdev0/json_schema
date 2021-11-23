@@ -345,6 +345,14 @@ class Validator {
         reportMultipleErrors: _reportMultipleErrors));
     final oneOfIsFlase = schemas.where((values) => values.isEmpty).isEmpty;
 
+    try {
+      schemas.singleWhere((values) => values.isEmpty);
+    } on StateError catch (error) {
+      schemas.forEach(_errors.addAll);
+      _err('${schema.path}/oneOf: violated ${error.message}', instance.path,
+          schema.path + '/oneOf');
+    }
+
     if (oneOfIsFlase) {
       schemas.forEach(_errors.addAll);
       _err('${schema.path}/oneOf: violated all schemas', instance.path,
