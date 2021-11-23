@@ -208,7 +208,9 @@ class Validator {
     final typeList = schema.typeList;
     if (typeList != null && typeList.length > 0) {
       if (!typeList.any((type) => _typeMatch(type, schema, instance.data))) {
-        _err('type: wanted ${typeList} got $instance', instance.path,
+        _err(
+            'type: wanted ${typeList} got ${instance.data.runtimeType.toString()} (value: $instance)',
+            instance.path,
             schema.path);
       }
     }
@@ -228,7 +230,10 @@ class Validator {
         enumValues
             .singleWhere((v) => JsonSchemaUtils.jsonEqual(instance.data, v));
       } on StateError {
-        _err('enum violated ${instance}', instance.path, schema.path);
+        _err(
+            'enum violated ${instance}, but wanted one of ${enumValues.toString()}',
+            instance.path,
+            schema.path);
       }
     }
   }
@@ -336,25 +341,28 @@ class Validator {
   }
 
   void _validateOneOf(JsonSchema schema, Instance instance) {
-    try {
-      schema.oneOf.singleWhere((s) => _validateWithErrors(s, instance));
-    } on StateError catch (notOneOf) {
-      // TODO: deal with oneOf
-      _err('${schema.path}/oneOf: violated ${notOneOf.message}', instance.path,
+    final schemas = schema.oneOf.map((s) => _validateWithErrors(s, instance,
+        reportMultipleErrors: _reportMultipleErrors));
+    final oneOfIsFlase = schemas.where((values) => values.isEmpty).isEmpty;
+
+    if (oneOfIsFlase) {
+      schemas.forEach(_errors.addAll);
+      _err('${schema.path}/oneOf: violated all schemas', instance.path,
           schema.path + '/oneOf');
     }
   }
 
-  bool _validateWithErrors(JsonSchema schema, Instance instance) {
+  Iterable<ValidationError> _validateWithErrors(
+      JsonSchema schema, dynamic instance,
+      {bool reportMultipleErrors,
+      bool parseJson = false,
+      bool validateFormats}) {
     final validator = Validator(schema);
-    bool withoutErrors = validator.validate(instance,
-        reportMultipleErrors: _reportMultipleErrors);
-    final errors = validator.errorObjects;
-    if (!withoutErrors && errors.isNotEmpty) {
-      _errors.addAll(errors);
-    }
-
-    return withoutErrors;
+    validator.validate(instance,
+        reportMultipleErrors: true,
+        parseJson: parseJson,
+        validateFormats: validateFormats);
+    return validator.errorObjects;
   }
 
   void _validateNot(JsonSchema schema, Instance instance) {
