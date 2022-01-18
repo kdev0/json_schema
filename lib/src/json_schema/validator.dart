@@ -77,6 +77,10 @@ class ValidationError {
 
 /// Initialized with schema, validates instances against it
 class Validator {
+  final JsonSchema _rootSchema;
+  List<ValidationError> _errors = [];
+  bool _reportMultipleErrors;
+
   Validator(this._rootSchema);
 
   List<String> get errors => _errors.map((e) => e.toString()).toList();
@@ -204,26 +208,33 @@ class Validator {
     }
   }
 
-  void _typeValidation(JsonSchema schema, dynamic instance) {
+  void _typeValidation(JsonSchema schema, Instance instance) {
     final typeList = schema.typeList;
     if (typeList != null && typeList.length > 0) {
       if (!typeList.any((type) => _typeMatch(type, schema, instance.data))) {
-        _err(
-            'type: wanted ${typeList} got ${instance.data.runtimeType.toString()} (value: $instance)',
-            instance.path,
-            schema.path);
+        if (instance.data is Iterable) {
+          _err(
+              '[type] wanted one of ${typeList.toString()}, but got \'${instance.data.runtimeType.toString()}\'',
+              instance.path,
+              schema.path);
+        } else {
+          _err(
+              '[type] wanted one of ${typeList.toString()}, but got \'${instance.data.runtimeType.toString()}\' (value: ${instance.toString()})',
+              instance.path,
+              schema.path);
+        }
       }
     }
   }
 
-  void _constValidation(JsonSchema schema, dynamic instance) {
+  void _constValidation(JsonSchema schema, Instance instance) {
     if (schema.hasConst &&
         !JsonSchemaUtils.jsonEqual(instance.data, schema.constValue)) {
       _err('const violated ${instance}', instance.path, schema.path);
     }
   }
 
-  void _enumValidation(JsonSchema schema, dynamic instance) {
+  void _enumValidation(JsonSchema schema, Instance instance) {
     final enumValues = schema.enumValues;
     if (enumValues.length > 0) {
       try {
@@ -231,7 +242,7 @@ class Validator {
             .singleWhere((v) => JsonSchemaUtils.jsonEqual(instance.data, v));
       } on StateError {
         _err(
-            'enum violated ${instance}, but wanted one of ${enumValues.toString()}',
+            '[enum] got \'${instance}\', but wanted one of ${enumValues.toString()}',
             instance.path,
             schema.path);
       }
@@ -326,7 +337,9 @@ class Validator {
   void _validateAllOf(JsonSchema schema, Instance instance) {
     if (!schema.allOf.every((s) => Validator(s)
         .validate(instance, reportMultipleErrors: _reportMultipleErrors))) {
-      _err('${schema.path}: allOf violated ${instance}', instance.path,
+      _err(
+          '${schema.path}: An \'allOf\' rule is violated. One or more schemas is failed.',
+          instance.path,
           schema.path + '/allOf');
     }
   }
@@ -335,8 +348,10 @@ class Validator {
     if (!schema.anyOf.any((s) => Validator(s)
         .validate(instance, reportMultipleErrors: _reportMultipleErrors))) {
       // TODO: deal with /anyOf
-      _err('${schema.path}/anyOf: anyOf violated ($instance, ${schema.anyOf})',
-          instance.path, schema.path + '/anyOf');
+      _err(
+          '${schema.path}/anyOf: An \'anyOf\' rule is violated. All schemas is failed.',
+          instance.path,
+          schema.path + '/anyOf');
     }
   }
 
@@ -349,13 +364,17 @@ class Validator {
       schemas.singleWhere((values) => values.isEmpty);
     } on StateError catch (error) {
       schemas.forEach(_errors.addAll);
-      _err('${schema.path}/oneOf: violated ${error.message}', instance.path,
+      _err(
+          '${schema.path}/oneOf: An \'oneOf\' rule is violated. Two or more schemas have been successfully validated.',
+          instance.path,
           schema.path + '/oneOf');
     }
 
     if (oneOfIsFlase) {
       schemas.forEach(_errors.addAll);
-      _err('${schema.path}/oneOf: violated all schemas', instance.path,
+      _err(
+          '${schema.path}/oneOf: An \'oneOf\' rule is violated. All schemas is failed.',
+          instance.path,
           schema.path + '/oneOf');
     }
   }
@@ -620,7 +639,7 @@ class Validator {
     if (schema.requiredProperties != null) {
       schema.requiredProperties.forEach((prop) {
         if (!instance.data.containsKey(prop)) {
-          _err('required prop missing: ${prop} from $instance', instance.path,
+          _err('required prop missing: \'${prop}\'', instance.path,
               schema.path + '/required');
         }
       });
@@ -706,14 +725,8 @@ class Validator {
   }
 
   void _err(String msg, String instancePath, String schemaPath) {
-    // _logger.warning(msg); TODO: re-add logger
-
     schemaPath = schemaPath.replaceFirst('#', '');
     _errors.add(ValidationError._(instancePath, schemaPath, msg));
     if (!_reportMultipleErrors) throw FormatException(msg);
   }
-
-  JsonSchema _rootSchema;
-  List<ValidationError> _errors = [];
-  bool _reportMultipleErrors;
 }
