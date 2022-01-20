@@ -335,47 +335,46 @@ class Validator {
   }
 
   void _validateAllOf(JsonSchema schema, Instance instance) {
-    if (!schema.allOf.every((s) => Validator(s)
-        .validate(instance, reportMultipleErrors: _reportMultipleErrors))) {
+    final schemas = schema.allOf.map(
+      (s) => _validateWithErrors(s, instance,
+          reportMultipleErrors: _reportMultipleErrors),
+    );
+    if (!schemas.every((errors) => errors.isEmpty)) {
       _err(
           '${schema.path}: An \'allOf\' rule is violated. One or more schemas is failed.',
           instance.path,
           schema.path + '/allOf');
+      schemas.forEach(_errors.addAll);
     }
   }
 
   void _validateAnyOf(JsonSchema schema, Instance instance) {
-    if (!schema.anyOf.any((s) => Validator(s)
-        .validate(instance, reportMultipleErrors: _reportMultipleErrors))) {
-      // TODO: deal with /anyOf
+    final schemas = schema.anyOf.map(
+      (s) => _validateWithErrors(s, instance,
+          reportMultipleErrors: _reportMultipleErrors),
+    );
+    if (!schemas.any((errors) => errors.isEmpty)) {
       _err(
           '${schema.path}/anyOf: An \'anyOf\' rule is violated. All schemas is failed.',
           instance.path,
           schema.path + '/anyOf');
+      schemas.forEach(_errors.addAll);
     }
   }
 
   void _validateOneOf(JsonSchema schema, Instance instance) {
     final schemas = schema.oneOf.map((s) => _validateWithErrors(s, instance,
         reportMultipleErrors: _reportMultipleErrors));
-    final oneOfIsFlase = schemas.where((values) => values.isEmpty).isEmpty;
 
     try {
-      schemas.singleWhere((values) => values.isEmpty);
+      schemas.singleWhere((errors) => errors.isEmpty);
     } on StateError catch (error) {
       schemas.forEach(_errors.addAll);
       _err(
           '${schema.path}/oneOf: An \'oneOf\' rule is violated. Two or more schemas have been successfully validated.',
           instance.path,
           schema.path + '/oneOf');
-    }
-
-    if (oneOfIsFlase) {
       schemas.forEach(_errors.addAll);
-      _err(
-          '${schema.path}/oneOf: An \'oneOf\' rule is violated. All schemas is failed.',
-          instance.path,
-          schema.path + '/oneOf');
     }
   }
 
